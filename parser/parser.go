@@ -30,6 +30,16 @@ func ParseFiles(filenames []string, importPaths []string) (*ast.FileSet, error) 
 		importPaths = []string{"."}
 	}
 
+	var absImportPaths []string
+	for _, p := range importPaths {
+		f, err := filepath.Abs(p)
+		if err != nil {
+			// TODO could return a better error here
+			return nil, err
+		}
+		absImportPaths = append(absImportPaths, f)
+	}
+
 	fset := new(ast.FileSet)
 
 	index := make(map[string]int) // filename => index in fset.Files
@@ -47,19 +57,47 @@ func ParseFiles(filenames []string, importPaths []string) (*ast.FileSet, error) 
 
 		// Read the first existing file relative to an element of importPaths.
 		var buf []byte
-		for _, impPath := range importPaths {
-			b, err := ioutil.ReadFile(filepath.Join(impPath, filename))
-			if err != nil {
-				if os.IsNotExist(err) {
+		for _, impPath := range absImportPaths {
+			if !filepath.IsAbs(filename) {
+				// try and join the filename to the import path
+				b, err := ioutil.ReadFile(filepath.Join(impPath, filename))
+				if err != nil {
+					if !os.IsNotExist(err) {
+						return nil, err
+					}
+				} else {
+					buf = b
+				}
+			}
+			if buf == nil {
+				absFilename, err := filepath.Abs(filename)
+				if err != nil {
+					return nil, err
+				}
+				rel, err := filepath.Rel(impPath, absFilename)
+				if err != nil || strings.HasPrefix(rel, ".") {
+					// in this case we either couldn't make it relative
+					// or this import path does not 'contain' the file
 					continue
 				}
-				return nil, err
+
+				// otherwise this file exists within the import path
+				// read it
+				b, err := ioutil.ReadFile(absFilename)
+				if err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					return nil, err
+				}
+				buf = b
 			}
-			buf = b
-			break
+			if buf != nil {
+				break
+			}
 		}
 		if buf == nil {
-			return nil, fmt.Errorf("file not found: %s", filename)
+			return nil, fmt.Errorf("file not found in import paths: %s, paths %v", filename, importPaths)
 		}
 
 		p := newParser(filename, string(buf))
@@ -989,6 +1027,31 @@ func (p *parser) skipWhitespaceAndComments() {
 				continue
 			}
 			// end of input; fall out of loop
+		}
+		if i+1 < len(p.s) && p.s[i] == '/' && p.s[i+1] == '*' {
+			si := i + 2
+			c := comment{line: p.line, offset: p.offset + i}
+			// comment; skip to end of comment or input
+			found := false
+			for i < len(p.s) {
+				if p.s[i] == '\n' {
+					p.line++
+				} else if strings.HasPrefix(p.s[i:], "*/") {
+					found = true
+					break
+				}
+				i++
+			}
+			if !found {
+				p.errorf("encountered EOF inside multi-line comment")
+				return
+			}
+			c.text = p.s[si:i]
+			p.comments = append(p.comments, c)
+
+			//
+			i = i + len("*/")
+			continue
 		}
 		break
 	}
