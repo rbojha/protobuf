@@ -49,7 +49,7 @@ func (s *scope) last() interface{} {
 
 // findName attemps to find the given name in the scope.
 // Only immediate names are found; it does not recurse.
-func (s *scope) findName(name string) []interface{} {
+func (s *scope) findName(name []string) []interface{} {
 	o := s.last()
 	if o == nil {
 		return nil
@@ -66,31 +66,41 @@ func (s *scope) findName(name string) []interface{} {
 			} else {
 				// Match on package name
 				// TODO: fix this for dotted package names
-				if f.Package[0] == name {
-					return []interface{}{f}
+				if len(f.Package) == len(name) {
+					match := true
+					for i := range f.Package {
+						match = match && (f.Package[i] == name[i])
+						if !match {
+							break
+						}
+					}
+
+					if match {
+						return []interface{}{f}
+					}
 				}
 			}
 		}
 		return ret
 	case *ast.File:
 		for _, msg := range ov.Messages {
-			if msg.Name == name {
+			if msg.Name == name[len(name)-1] {
 				return []interface{}{msg}
 			}
 		}
 		for _, enum := range ov.Enums {
-			if enum.Name == name {
+			if enum.Name == name[len(name)-1] {
 				return []interface{}{enum}
 			}
 		}
 	case *ast.Message:
 		for _, msg := range ov.Messages {
-			if msg.Name == name {
+			if msg.Name == name[len(name)-1] {
 				return []interface{}{msg}
 			}
 		}
 		for _, enum := range ov.Enums {
-			if enum.Name == name {
+			if enum.Name == name[len(name)-1] {
 				return []interface{}{enum}
 			}
 		}
@@ -273,16 +283,18 @@ func (r *resolver) resolveName(s *scope, name string) *scope {
 }
 
 func matchNameComponents(s *scope, parts []string) *scope {
-	first, rem := parts[0], parts[1:]
-	for _, o := range s.findName(first) {
-		os := s.dup()
-		os.push(o)
-		if len(rem) == 0 {
-			return os
-		}
-		// TODO: catch ambiguous names here
-		if is := matchNameComponents(os, rem); is != nil {
-			return is
+	for i := 1; i <= len(parts); i++ {
+		first, rem := parts[:i], parts[i:]
+		for _, o := range s.findName(first) {
+			os := s.dup()
+			os.push(o)
+			if len(rem) == 0 {
+				return os
+			}
+			// TODO: catch ambiguous names here
+			if is := matchNameComponents(os, rem); is != nil {
+				return is
+			}
 		}
 	}
 	return nil

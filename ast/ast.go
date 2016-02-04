@@ -103,6 +103,8 @@ type Field struct {
 	HasPacked bool
 	Packed    bool
 
+	Options [][2]string // slice of key/value pairs
+
 	Oneof *Oneof
 
 	Up Node // either *Message or *Extension

@@ -626,6 +626,25 @@ func (p *parser) readFieldOptions(f *ast.Field) *parseError {
 				return err
 			}
 			f.Packed = packed
+		case "(":
+			// TODO test cases needed here
+			tok := p.next()
+			if tok.err != nil {
+				return tok.err
+			}
+			key := tok.value
+			if err := p.readToken(")"); err != nil {
+				return err
+			}
+			if err := p.readToken("="); err != nil {
+				return err
+			}
+			tok = p.next()
+			if tok.err != nil {
+				return tok.err
+			}
+			val := tok.value
+			f.Options = append(f.Options, [2]string{key, val})
 		default:
 			return p.errorf(`got %q, want "default" or "packed"`, tok.value)
 		}
